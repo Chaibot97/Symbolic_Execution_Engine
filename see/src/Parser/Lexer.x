@@ -18,12 +18,11 @@ tokens:-
     "end"                               { const TEnd }
     "while"                             { const TWhile }
     "skip"                              { const TSkip }
-    "inv"                               { const TInv }
+    "assert"                            { const TAssert }
     "do"                                { const TDo }
     "program"                           { const TProgram }
     "is"                                { const TIs }
     "pre"                               { const TPre }
-    "post"                              { const TPost }
     "forall"                            { const TForall }
     "exists"                            { const TExists }
     "true"                              { const TTrue }
@@ -64,9 +63,8 @@ data Token = TokenInt Int
            | TIs
            | TForall
            | TExists
-           | TInv
+           | TAssert
            | TPre
-           | TPost
            | TTrue
            | TFalse
            deriving (Eq, Show)

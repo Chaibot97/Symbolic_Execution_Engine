@@ -84,13 +84,19 @@ instance Show Assertion where
   show (AQ q xs s) = printf "(%s [%s] %s)" (show q) (intercalate " " xs) (show s)
 
 -- Program statements
+data Param =  PVar Name | PArr Name
+instance Show Param where
+  show (PVar name) = name
+  show (PArr name) = name ++ "[]"
+
 type Block = [Statement]
 data Statement = Assign Name AExp
                | Write Name AExp AExp
                | ParAssign Name Name AExp AExp
                | If BExp Block Block
-               | While BExp [Assertion] Block
+               | While BExp Block
                | Skip
+               | Assert Assertion
 instance Show Statement where
   show s = intercalate "\n" (show_list s)
 
@@ -105,13 +111,13 @@ show_list (If b c1 c2) =
   [ "else" ] ++
     indent (showlist_block c2) ++
   [ "end" ]
-show_list (While b invs c) =
+show_list (While b c) =
   [ "while " ++ show b ] ++
-    indent (prefix "inv " (map show invs)) ++
   [ "do" ] ++
     indent (showlist_block c) ++
   [ "end" ]
 show_list (Skip) = [ "skip" ]
+show_list (Assert assertion) = ["assert " ++ show assertion ++ ";"]
 
 prefix :: String -> [String] -> [String]
 prefix pre = map (\x -> pre ++ x)
@@ -123,37 +129,15 @@ showlist_block :: Block -> [String]
 showlist_block b = concat (map show_list b)
 
 data Program = Program { name  :: Name
+                       , param   :: [Param]
                        , pre   :: [Assertion]
-                       , post  :: [Assertion]
                        , block :: Block
                        }
 instance Show Program where
-  show Program {name=name, pre=pre, post=post, block=block} =
+  show Program {name=name, param=param, pre=pre, block=block} =
     intercalate "\n" (
-    [ "program " ++ name
+    [ "program " ++ name ++ "(" ++ intercalate " " (map show param) ++ ")"
     , intercalate "\n" (prefix "pre " (map show pre))
-    , intercalate "\n" (prefix "post " (map show post))
     , "is" ] ++
     [ intercalate "\n" (indent (showlist_block block)) ] ++
     [ "end" ])
-
--- Loop-free guarded command language
-type GCBlock = [GuardedCommand]
-data GuardedCommand = GCAssert Assertion
-                    | GCAssume Assertion
-                    | GCHavoc Typed
-                    | GCChoice GCBlock GCBlock
-instance (Show GuardedCommand) where
-  show gc = intercalate "\n" (gc_strlist gc)
-
-gc_strlist :: GuardedCommand -> [String]
-gc_strlist gc = case gc of
-  GCAssert s -> ["assert " ++ show s]
-  GCAssume s -> ["assume " ++ show s]
-  GCHavoc (v,_) -> ["havoc " ++ v]
-  GCChoice c1 c2 -> ["choose"] ++ b1 ++ ["or"] ++ b2 where
-    b1 = indent (gcblock_strlist c1)
-    b2 = indent (gcblock_strlist c2)
-
-gcblock_strlist :: [GuardedCommand] -> [String]
-gcblock_strlist l = concat (map gc_strlist l)

@@ -43,12 +43,11 @@ import Parser.Lexer
     "while"     { TWhile }
     "do"        { TDo }
     "skip"      { TSkip }
-    "inv"       { TInv }
     "program"   { TProgram }
     "is"        { TIs }
 
     "pre"       { TPre }
-    "post"      { TPost }
+    "assert"    { TAssert }
     
     "forall"    { TForall }
     "exists"    { TExists }
@@ -85,17 +84,15 @@ list(p)
      | list_plus(p)   { $1 }
 
 prog :: { Program }
-     : "program" name list(pre) list(post) "is" block "end"
-       { Program{name = $2, pre = $3, post = $4, block = $6} }
+     : "program" name '(' list(param) ')' list(pre) "is" block "end"
+       { Program{name = $2, param = $4, pre = $6, block = $8} }
+
+param :: {Param}
+     : name {PVar $1}
+     | name '['']' {PArr $1}
 
 pre  :: { Assertion }
      : "pre"  assertion   { $2 }
-
-post :: { Assertion }
-     : "post" assertion   { $2 }
-
-inv  :: { Assertion }
-     : "inv"  assertion   { $2 }
 
 block :: { Block }
       : list_plus(stmt)   { $1 }
@@ -148,8 +145,10 @@ stmt :: { Statement }
      | name '[' arithExp ']' ":=" arithExp ';' { Write $1 $3 $6 }
      | "if" boolExp "then" block "else" block "end" { If $2 $4 $6 }
      | "if" boolExp "then" block "end" { If $2 $4 [] }
-     | "while" boolExp list(inv) "do" block "end" { While $2 $3 $5 }
+     | "while" boolExp "do" block "end" { While $2 $4 }
      | "skip" ';' { Skip }
+     | "assert" assertion {Assert $2}
+     | "assert" assertion ';' {Assert $2}
 
 {
 
