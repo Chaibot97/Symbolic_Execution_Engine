@@ -1,0 +1,10 @@
+program rev(a[] b[] N i)
+  pre 0 <= N
+is
+  i := 0;
+  while i < N
+  do
+    a[i] := b[N-i];
+    i := i + 1;
+  end
+end
