@@ -129,7 +129,7 @@ showlist_block :: Block -> [String]
 showlist_block b = concat (map show_list b)
 
 data Program = Program { name  :: Name
-                       , param   :: [Param]
+                       , param :: [Param]
                        , pre   :: [Assertion]
                        , block :: Block
                        }
