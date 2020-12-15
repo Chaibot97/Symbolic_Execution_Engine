@@ -1,0 +1,20 @@
+program bubble
+pre n > 0
+is
+  bound := n;
+  while bound > 0
+  do
+    i := 0;
+    while i < bound - 1
+    do
+      if a[i] > a[i+1] then
+        t := a[i];
+        a[i] := a[i+1];
+        a[i+1] := t;
+      end
+      i := i + 1;
+    end
+    bound := bound - 1;
+  end
+  assert forall i j, 0 <= i && i <= j && j < n ==> a[i] <= a[j]
+end

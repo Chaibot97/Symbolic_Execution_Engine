@@ -1,0 +1,10 @@
+program find
+  pre  0 <= N
+is
+  n := 0;
+  while n < N && a[n] != x
+  do
+    n := n + 1;
+  end
+  assert a[n] = x || (forall i, (0 <= i && i < N) ==> a[i] != x)
+end

@@ -1,0 +1,15 @@
+program prime
+  pre 2 <= n
+is
+  i := 2;
+  p := 1;
+
+  while i < n
+  do
+    if n % i = 0 then
+      p := 0;
+    end
+    i := i + 1;
+  end
+  assert p = 1 ==> (forall i, (2 <= i && i < n) ==> n % i != 0)
+end

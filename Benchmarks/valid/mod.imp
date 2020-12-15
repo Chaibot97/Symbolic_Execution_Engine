@@ -1,0 +1,22 @@
+program mod
+    pre  0 < n
+is
+    i := 0;
+    r := a;
+
+    if r >= 0 then
+        while r >= n
+        do
+            r := r - n;
+            i := i + 1;
+        end
+    else
+        while r < 0
+        do
+            r := r + n;
+            i := i - 1;
+        end
+    end
+    assert 0 <= r && r < n
+    assert n * i + r = a
+end

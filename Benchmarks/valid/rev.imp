@@ -1,0 +1,11 @@
+program rev
+  pre 0 <= N
+is
+  i := 0;
+  while i < N
+  do
+    a[i] := b[N-i];
+    i := i + 1;
+  end
+  assert forall i, 0 <= i && i < N ==> a[i] = b[N-i]
+end
