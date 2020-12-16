@@ -81,7 +81,7 @@ instance Show Assertion where
   show (ACmp cmp) = show cmp
   show (ANot b) = "(not " ++ show b ++ ")"
   show (ABinOp op b1 b2) = printf "(%s %s %s)" (show op) (show b1) (show b2)
-  show (AQ q xs s) = printf "(%s [%s] %s)" (show q) (intercalate " " xs) (show s)
+  show (AQ q xs s) = printf "(%s [%s] %s)" (show q) (unwords xs) (show s)
 
 -- Program statements
 data Param =  PVar Name | PArr Name
@@ -98,35 +98,35 @@ data Statement = Assign Name AExp
                | Skip
                | Assert Assertion
 instance Show Statement where
-  show s = intercalate "\n" (show_list s)
+  show s = intercalate "\n" (showStmt s)
 
-show_list :: Statement -> [String]
-show_list (Assign x e) = [x ++ " := " ++ show e ++ ";"]
-show_list (ParAssign x y ex ey) = [x ++ ", " ++ y ++ " := " ++ show ex ++ ", " ++ show ey ++ ";"]
-show_list (Write a ei ev) = [printf "%s[%s] := %s" a (show ei) (show ev)]
-show_list (If b c1 c2) =
+showStmt :: Statement -> [String]
+showStmt (Assign x e) = [x ++ " := " ++ show e ++ ";"]
+showStmt (ParAssign x y ex ey) = [x ++ ", " ++ y ++ " := " ++ show ex ++ ", " ++ show ey ++ ";"]
+showStmt (Write a ei ev) = [printf "%s[%s] := %s" a (show ei) (show ev)]
+showStmt (If b c1 c2) =
   [ "if " ++ show b
   , "then" ] ++
-    indent (showlist_block c1) ++
+    indent (showBlock c1) ++
   [ "else" ] ++
-    indent (showlist_block c2) ++
+    indent (showBlock c2) ++
   [ "end" ]
-show_list (While b c) =
+showStmt (While b c) =
   [ "while " ++ show b ] ++
   [ "do" ] ++
-    indent (showlist_block c) ++
+    indent (showBlock c) ++
   [ "end" ]
-show_list (Skip) = [ "skip" ]
-show_list (Assert assertion) = ["assert " ++ show assertion ++ ";"]
+showStmt Skip = [ "skip" ]
+showStmt (Assert assertion) = ["assert " ++ show assertion ++ ";"]
 
 prefix :: String -> [String] -> [String]
-prefix pre = map (\x -> pre ++ x)
+prefix pre = map (pre ++)
 
 indent :: [String] -> [String]
 indent = prefix "  "
 
-showlist_block :: Block -> [String]
-showlist_block b = concat (map show_list b)
+showBlock :: Block -> [String]
+showBlock = concatMap showStmt
 
 data Program = Program { name  :: Name
                        , param :: [Param]
@@ -136,8 +136,8 @@ data Program = Program { name  :: Name
 instance Show Program where
   show Program {name=name, param=param, pre=pre, block=block} =
     intercalate "\n" (
-    [ "program " ++ name ++ "(" ++ intercalate " " (map show param) ++ ")"
+    [ "program " ++ name ++ "(" ++ unwords (map show param) ++ ")"
     , intercalate "\n" (prefix "pre " (map show pre))
     , "is" ] ++
-    [ intercalate "\n" (indent (showlist_block block)) ] ++
+    [ intercalate "\n" (indent (showBlock block)) ] ++
     [ "end" ])

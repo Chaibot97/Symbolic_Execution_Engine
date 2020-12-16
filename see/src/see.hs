@@ -9,12 +9,12 @@ import Text.Printf ( printf )
 import System.Environment ( getArgs )
 import Debug.Trace ( trace )
 
-bexp_to_assert :: BExp -> Assertion
-bexp_to_assert (BCmp c) = ACmp c
-bexp_to_assert (BNot b) = ANot (bexp_to_assert b)
-bexp_to_assert (BBinOp op b1 b2) = ABinOp op b1' b2' where
-  b1' = bexp_to_assert b1
-  b2' = bexp_to_assert b2
+bexp2assert :: BExp -> Assertion
+bexp2assert (BCmp c) = ACmp c
+bexp2assert (BNot b) = ANot (bexp2assert b)
+bexp2assert (BBinOp op b1 b2) = ABinOp op b1' b2' where
+  b1' = bexp2assert b1
+  b2' = bexp2assert b2
 
 -- Execute
 uninit :: Name -> AExp
@@ -28,7 +28,7 @@ assignVar :: [Comparison] -> AExp -> AExp -> [Comparison]
 assignVar (h@(Comp Eq (Var n1) _ ):t) var@(Var n2) val = 
   if n1 == n2
     then Comp Eq var val : t
-    else h :assignVar t var val
+    else h : assignVar t var val
 
 evalExp :: [Comparison] -> AExp -> AExp
 evalExp l@(h@(Comp Eq (Var n1) val ):t) exp = 
@@ -59,12 +59,12 @@ runStmts (s:t) n tree@(Node node@(conds,vals) Empty Empty) =
     Assign name val 
       -> runStmts t n $ newNode (conds, assignVar vals (Var name) (evalExp vals val))
     If bexp blk1 blk2 
-      -> Node node (runStmts (blk1++t) n $ newNode ((bexp_to_assert (BNot bexp)):conds, vals)) (runStmts (blk2++t) n $ newNode ((bexp_to_assert bexp):conds, vals))
+      -> Node node (runStmts (blk1++t) n $ newNode ((bexp2assert (BNot bexp)):conds, vals)) (runStmts (blk2++t) n $ newNode ((bexp2assert bexp):conds, vals))
     -- nested loop not supported yet
     While bexp blk
       -> case n of 
-        0 -> runStmts t n $ newNode ((bexp_to_assert (BNot bexp)):conds, vals)
-        _ -> Node node (runStmts t n $ newNode ((bexp_to_assert (BNot bexp)):conds, vals)) (runStmts (blk++t) (n-1) $ newNode ((bexp_to_assert bexp):conds, vals))
+        0 -> runStmts t n $ newNode ((bexp2assert (BNot bexp)):conds, vals)
+        _ -> Node node (runStmts t n $ newNode ((bexp2assert (BNot bexp)):conds, vals)) (runStmts (blk++t) (n-1) $ newNode ((bexp2assert bexp):conds, vals))
     Assert as -> runStmts t n $ newNode ((ANot as):conds, vals)
     -- Write Name AExp AExp
     -- ParAssign Name Name AExp AExp
