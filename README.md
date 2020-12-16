@@ -7,12 +7,12 @@ Authors: Lizhou Cai, Junrui Liu
 
 ## Usage
 
-`cd` into `see`. Build the project by typing `make`.
+Build the project by typing `make`.
 
 Run the program with
 
 ```
-./see.sh [--dry-run] FILE N
+bin/see.sh [--dry-run] FILE N
 ```
 
 where
