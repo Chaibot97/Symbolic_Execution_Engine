@@ -10,15 +10,17 @@ fi
 
 valid_msg="Verified"
 invalid_msg="Not verified"
+error_msg="Error"
 
 
-vc=$(cabal -v0 new-run vcgen "$1" 2>/dev/null)
+formula=$(cabal run see "$@")
 if [ "$?" -ne "0" ]; then
-    echo "$invalid_msg"
-elif [ "$2" == "--vc" ]; then # print verification condition only
-    echo "$vc"
+    echo "$error_msg"
+    echo "$formula"
+elif [ "$1" == "--dry-run" ]; then # dry run: print smt formula
+    echo "$formula"
 else
-    out=$(echo "$vc" | z3 -in)
+    out=$(echo "$formula" | z3 -in)
     if [ "$out" = unsat ]; then
         echo "$valid_msg"
     elif [ "$out" = sat ]; then

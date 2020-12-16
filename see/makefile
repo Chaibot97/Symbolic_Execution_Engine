@@ -1,3 +1,3 @@
-vcgen:
-	cabal build :vcgen
-	chmod +x ./vcgen.sh
+see:
+	cabal build :see
+	chmod +x ./see.sh
