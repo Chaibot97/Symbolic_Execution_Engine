@@ -85,11 +85,11 @@ instance Show Assertion where
   show (ABinOp op b1 b2) = printf "(%s %s %s)" (show op) (show b1) (show b2)
   show (AMOp op aa) = printf "(%s %s)" (show op) (unwords (map show aa))
   show (AQ q xs s) = printf "(%s (%s) %s)" (show q) xts (show s) where
-    xts = typing_to_str (zip xs (repeat TInt))
+    xts = unwords (map typedToString (zip xs (repeat TInt)))
 
 -- Convert (x, type) to an S-exp string
-typing_to_str :: [Typed] -> String
-typing_to_str ts = intercalate " " (map (\(x,t) -> printf "(%s %s)" x (show t)) ts)
+typedToString :: Typed -> String
+typedToString (x,t) = printf "%s %s" x (show t)
 
 data AST =
     Assign Name AExp

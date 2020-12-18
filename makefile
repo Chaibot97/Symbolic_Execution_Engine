@@ -5,8 +5,7 @@ all:
 	make .py
 
 .hs:
-	cabal configure \
-	&& cabal build --ghc-options="-Wall"
+	cabal build --ghc-options="-Wall"
 
 .py:
 	mkdir -p bin

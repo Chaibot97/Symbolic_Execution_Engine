@@ -5,8 +5,11 @@ module Main (main) where
 import Language
 import Parser.Parser ( parseProg )
 
-import Data.List ((\\),  intercalate, filter, notElem, foldl, concatMap, intersperse, intersperse, lookup, )
-import qualified Data.Set as S (intersection, Set, empty, singleton, union, difference, unions, fromList, filter, map, foldl, toList )  
+import Data.List ( intercalate, )
+import Data.Set (Set)
+import qualified Data.Set as S (empty, singleton, difference, unions, fromList, map, toList )  
+import Data.Map (Map, (!))
+import qualified Data.Map as Map (insert, fromList, mapAccumWithKey, lookup)
 import Text.Printf ( printf )
 import System.Environment ( getArgs, )
 import Debug.Trace ( trace )
@@ -55,26 +58,19 @@ unrollOnce s = s
 
 -- Unroll each while loop n times
 unroll :: AST -> Int -> AST
-unroll s n = if n == 0 then rmWhile s else unroll (unrollOnce s) (n-1)
+unroll s n = if n == 0 then s else unroll (unrollOnce s) (n-1)
 
 
 -- Things we need to keep track of during symbolic execution
 type Guard = [Assertion]
 type SymbolicValue = AExp
-type Association a b = [(a, b)]
-type State = Association Typed SymbolicValue
-
--- Lookup the typed variable in the state
-get :: State -> Typed -> SymbolicValue
-get s (x,t) = case lookup (x,t) s of
-  Nothing -> error (printf "Variable %s of type %s not found" x (show t))
-  Just e  -> e
+type State = Map Typed SymbolicValue
 
 
 -- Update the symbolic value of the variable in the state
 update :: State -> (Typed, AExp) -> State
-update (s@(x',_):t) u@(x,e) = if x'== x then u : t else s:(update t u)
-update [] u = u:[]
+update s (xt, e) = Map.insert xt e' s where
+  e' = evalAExp s e -- evaluate e in the current state
 
 updateMany :: State -> [(Typed, AExp)] -> State
 updateMany = foldl update
@@ -84,7 +80,7 @@ updateMany = foldl update
 -- Basically, replace non-symbolic names with symbolic values
 evalAExp :: State -> AExp -> AExp
 evalAExp _ (Num n) = Num n
-evalAExp s (Var (x,t)) = get s (x,t)
+evalAExp s (Var (x,t)) = s ! (x,t)
 evalAExp s (BinOp op e1 e2) = BinOp op (evalAExp s e1) (evalAExp s e2)
 evalAExp s (Read ea ei) = Read (evalAExp s ea) (evalAExp s ei)
 evalAExp s (Store ea ei ev) = Store (evalAExp s ea) (evalAExp s ei) (evalAExp s ev)
@@ -92,46 +88,12 @@ evalAExp s (Store ea ei ev) = Store (evalAExp s ea) (evalAExp s ei) (evalAExp s 
 -- Interpret a BExp using the symbolic values in the current state
 -- Basically, replace non-symbolic names with symbolic values
 evalBExp :: State -> BExp -> BExp 
+evalBExp _ BTrue = BTrue
+evalBExp _ BFalse  = BFalse
 evalBExp s (BCmp (Comp ord e1 e2)) = BCmp (Comp ord (evalAExp s e1) (evalAExp s e2))
 evalBExp s (BNot e) = BNot (evalBExp s e)
 evalBExp s (BBinOp op e1 e2) = BBinOp op (evalBExp s e1) (evalBExp s e2)
-evalBExp _ e = e
 
--- Interpret an Assertion using the symbolic values in the current state
--- Basically, replace non-symbolic names with symbolic values
-evalAssertion :: State -> Assertion -> Assertion
-evalAssertion s (ACmp (Comp ord e1 e2)) = ACmp (Comp ord (evalAExp s e1) (evalAExp s e2))
-evalAssertion s (ANot a) = ANot (evalAssertion s a)
-evalAssertion s (ABinOp op a1 a2) = ABinOp op (evalAssertion s a1) (evalAssertion s a2)
-evalAssertion s (AMOp op aa) = AMOp op (map (evalAssertion s) aa)
-evalAssertion s old@(AQ _ _ _) = AQ q xs (evalAssertion s a) where new@(AQ q xs a) =  refreshVal old -- refresh quantified variables
-evalAssertion _ a = a
-
-refreshVal :: Assertion -> Assertion
-refreshVal (AQ q xs a) = AQ q (map fresh xs) (refreshAssert xs (refreshVal a))
-
-refreshAexp :: [Name] -> AExp -> AExp
-refreshAexp _ (Num n) = Num n
-refreshAexp n v@(Var (x,t)) =  if notElem x n then v else Var (fresh x,t)
-refreshAexp n (BinOp op e1 e2) = BinOp op (refreshAexp n e1) (refreshAexp n e1)
-refreshAexp n (Read ea ei) = Read (refreshAexp n ea) (refreshAexp n ei)
-refreshAexp n (Store ea ei ev) = Store (refreshAexp n ea) (refreshAexp n ei) (refreshAexp n ev)
-
-refreshBexp :: [Name] ->BExp -> BExp 
-refreshBexp n (BCmp (Comp ord e1 e2))= BCmp (Comp ord (refreshAexp n e1) (refreshAexp n e2))
-refreshBexp n (BNot e)= BNot (refreshBexp n e)
-refreshBexp n (BBinOp op e1 e2)= BBinOp op (refreshBexp n e1) (refreshBexp n e2)
-refreshBexp _ e = e
-
-refreshAssert :: [Name] -> Assertion -> Assertion
-refreshAssert n (ACmp (Comp ord e1 e2)) = ACmp (Comp ord (refreshAexp n e1) (refreshAexp n e2))
-refreshAssert n (ANot a) = ANot (refreshAssert n a)
-refreshAssert n (ABinOp op a1 a2)= ABinOp op (refreshAssert n a1) (refreshAssert n a2)
-refreshAssert n (AQ q xs a) = AQ q xs (refreshAssert n a)
-refreshAssert _ a = a
-
-fresh :: Name -> Name
-fresh old = trace old old ++ "_fv"
 
 -- Convert BExp to Assertion
 assertBExp :: BExp -> Assertion
@@ -146,7 +108,8 @@ assertBExp (BBinOp op b1 b2) = ABinOp op b1' b2' where
 
 -- Convert State to [Assertion]
 assertState :: State -> [Assertion]
-assertState = map (\((x,t), e) -> ACmp (Comp Eq (Var (x,t)) e))
+assertState s = fst (Map.mapAccumWithKey f [] s) where
+  f acc xt e = (ACmp (Comp Eq (Var xt) e) : acc, e)
 
 
 -- Return the conjunction of a list of assertions
@@ -170,10 +133,10 @@ execute :: AST -> Environment -> ([Assertion], [State])
 execute e env@(g,s) = case e of
   Assign x e' ->
     -- only one resulting state
-    ([], [update s ((x, TInt), evalAExp s e')])
+    ([], [update s ((x, TInt), e')])
   Write a ei ev ->
     -- only one resulting state
-    ([], [update s ((a, TArr), evalAExp s a')]) where
+    ([], [update s ((a, TArr), a')]) where
       a' = Store (Var (a, TArr)) ei ev
   Skip ->
     -- state unchanged
@@ -191,37 +154,41 @@ execute e env@(g,s) = case e of
     -- execute the 2nd block from all reachable states once the 1st block
     -- finished execution
     -- union the assertions, and return reachable states once 2nd block is done
-    (a1 ++ a2, ss2) where
+    (a1 ++ concat aa2, concat ss2) where
       (a1, ss1) =  execute b1 env
       res = map (execute b2 . (g,)) ss1
-      a2 = concatMap fst res
-      ss2 = concatMap snd res
+      (aa2, ss2) = unzip res
   Assert a ->
     -- return the assertion: not (path constraint => a), i.e. constraint /\ not a
     -- and state remains unchanged
     ( [conj (ANot a : g ++ assertState s)], [s] )
   While _ _ ->
-    -- assume loops are fully unrolled and eliminated before symbolic execution
-    error "symbolic execution does not support loops"
+    -- assume loops are fully unrolled
+    ([], [s])
   ParAssign x1 x2 e1 e2 ->
-    -- TODO: implement parallel assignment
-    ([], [updateMany s [((x1, TInt), evalAExp s e1), ((x2, TInt), evalAExp s e2)]])
+    ([], [ updateMany s [((x1, TInt), e1), ((x2, TInt), e2)] ])
 
 
 -- Initialize state by mapping input variables to (arbitrary) symbolic values
 initialState :: [Typed] -> State
-initialState = foldl (\st (x,t) -> update st ((x, t), x_sym x t)) [] where
-  x_sym = \x t -> Var ("_" ++ x, t) -- symbolic initial value for variable x
+initialState ts = Map.fromList (map x_sym ts) where
+  x_sym (x,t) = ((x,t), Var (initialValue (x,t), t)) -- symbolic initial value for variable x
+
+initialValue :: Typed -> String
+initialValue (x,t) = "_" ++ x
+
+-- Wrapper for the symbolic execution machine
+see :: Int -> Program -> (AST, [String])
+see n Program {name=_, param=ps, pre=p, ast=t} = (t', res) where
+  t' = unroll t n
+  (aa, _) = execute t' (p, initialState ps)
+  res = map (\a -> assertionToString a ++ check ++ get_value) aa
+  check = "(check-sat)"
+  get_value = printf "(get-value (%s))" (unwords (map initialValue ps))
 
 
-see :: Int -> Program -> (AST, String)
-see n Program {name=name, param=param, pre=pre, ast=ast} = (ast', aaStr) where
-  ast' = unroll ast n
-  (aa, ss) = execute ast' (pre, initialState param)
-  aaStr = assertionsToString aa
-
-
-collectVars :: AExp -> S.Set Typed
+-- Collect variables in an AExp
+collectVars :: AExp -> Set Typed
 collectVars (Num _) = S.empty 
 collectVars (Var xt) = S.singleton xt
 collectVars (BinOp _ e1 e2) = S.unions (map collectVars [e1, e2])
@@ -229,29 +196,25 @@ collectVars (Read ea ei) = S.unions (map collectVars [ea, ei])
 collectVars (Store ea ei ev) = S.unions (map collectVars [ea, ei, ev])
 
 
-collectVarsInAssertion :: Assertion -> S.Set Typed
+-- Collect variables in an Assertion
+collectVarsInAssertion :: Assertion -> Set Typed
 collectVarsInAssertion (ACmp (Comp _ e1 e2)) = S.unions (map collectVars [e1,e2])
 collectVarsInAssertion (ANot a) = collectVarsInAssertion a
 collectVarsInAssertion (ABinOp _ a1 a2) = S.unions (map collectVarsInAssertion [a1,a2])
 collectVarsInAssertion (AMOp _ aa) = S.unions (map collectVarsInAssertion aa)
 collectVarsInAssertion (AQ _ qVars a) = 
-  -- trace (printf "vars: %s\nqVars:%s" (show s) (show sq))
   (S.difference s sq) where
     s = collectVarsInAssertion a
     sq = S.map (, TInt) (S.fromList qVars)
 collectVarsInAssertion _ = S.empty
 
 
-typedToString :: Typed -> String
-typedToString (x,t) = printf "(declare-const %s %s)" x (show t)
-
-
-assertionsToString :: [Assertion] -> String
-assertionsToString aa = intercalate "\n" (tt ++ aa' ++ [check]) where
-  xtSet = S.unions (map collectVarsInAssertion aa)
-  tt = map typedToString (S.toList xtSet)
-  aa' = map (printf "(assert %s)" . show) aa
-  check = "(check-sat)"
+assertionToString :: Assertion -> String
+assertionToString a = intercalate "\n" (tt ++ [aStr]) where
+  declareTypes xt = printf "(declare-const %s)" (typedToString xt)
+  xtSet = collectVarsInAssertion a
+  tt = map declareTypes (S.toList xtSet)
+  aStr = printf "(assert %s)" (show a)
 
 
 -- DEBUGGING: how-to
@@ -285,9 +248,10 @@ main = do
   prog <- readFile (head as) 
   let n = read (head (tail as)) :: Int
   let p = parseProg prog
-  let (p',s) = see n p
-  -- print p'
-  putStrLn s
+  let (p',ss) = see n p
+  -- print p
+  -- print (rmWhile p')
+  putStrLn (intercalate "\n\n;SEP\n\n" (name p: ss))
 
   
  
