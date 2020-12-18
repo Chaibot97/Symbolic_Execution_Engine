@@ -12,7 +12,7 @@ Build the project by typing `make`.
 Run the program with
 
 ```
-bin/see.sh [--dry-run] FILE N
+bin/see [--dry-run] FILE N
 ```
 
 where
