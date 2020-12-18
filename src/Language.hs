@@ -51,6 +51,7 @@ instance Show AExp where
 -- Comparisons of expressions
 data Comparison = Comp Order AExp AExp
 instance Show Comparison where
+  show (Comp Neq e1 e2) = printf "(not (= %s %s))" (show e1) (show e2)
   show (Comp ord e1 e2) = printf "(%s %s %s)" (show ord) (show e1) (show e2)
 
 -- Boolean expressions 
@@ -83,7 +84,12 @@ instance Show Assertion where
   show (ANot b) = "(not " ++ show b ++ ")"
   show (ABinOp op b1 b2) = printf "(%s %s %s)" (show op) (show b1) (show b2)
   show (AMOp op aa) = printf "(%s %s)" (show op) (unwords (map show aa))
-  show (AQ q xs s) = printf "(%s [%s] %s)" (show q) (unwords xs) (show s)
+  show (AQ q xs s) = printf "(%s (%s) %s)" (show q) xts (show s) where
+    xts = typing_to_str (zip xs (repeat TInt))
+
+-- Convert (x, type) to an S-exp string
+typing_to_str :: [Typed] -> String
+typing_to_str ts = intercalate " " (map (\(x,t) -> printf "(%s %s)" x (show t)) ts)
 
 data AST =
     Assign Name AExp
