@@ -31,6 +31,7 @@ if __name__ == "__main__":
     cmd = f"cabal -v0 run see-hs {args.file.name} {args.n}"
     res = sp.run(cmd, shell=True, capture_output=True, check=True)
     out = get_stdout(res)
+    print(get_stderr(res))
     program_name, *formulas = out.split("\n\n;SEP\n\n")
 
     if len(formulas) == 0:
@@ -46,15 +47,31 @@ if __name__ == "__main__":
       else:
         models = list()
         for formula in formulas:
-          cmd = f"echo \"{formula}\" | z3 -in"
-          res = sp.run(cmd, shell=True, capture_output=True, check=True)
-          out = [l.strip() for l in get_stdout(res).split('\n')]
+          cmd = "echo \"{}\" | z3 -in"
+          verify = lambda fml: sp.run(cmd.format(fml), shell=True, capture_output=True, check=True)
+          res = verify(formula)
+          out = get_stdout(res)
 
-          if "sat" in out:
-            model_str = "".join(out[1:])
-            model = [pair[1] for pair in sexp.loads(model_str)]
+          if "sat" == out: # need to query z3 again for a model
+
+            # the last line has the form `;_v1 _v2 ... vn` where 
+            # _v1 through _vn are symbolic values for the parameters
+            vs = formula.split('\n')[-1][1:].split()
+            
+            # append a line to get the model
+            get_value = "\n(get-value ({}))".format(" ".join(vs))
+            formula += get_value
+            
+            # run the same command with a new formula
+            out = get_stdout(verify(formula))
+
+            # parse the model as an S-expression
+            model_str = "".join([l.strip() for l in out.split('\n')][1:])
+            parsed = sexp.loads(model_str)
+            model = [pair[1] for pair in parsed] # pair[0] is variable name
             models.append(model)
-          elif "unsat" in out:
+
+          elif "unsat" == out:
             pass
           else:
             raise ValueError("Output is neither sat nor unsat")
@@ -65,7 +82,13 @@ if __name__ == "__main__":
         else:
           print(INVALID_MSG)
           for model in models:
-            print(program_name.strip(), " ".join(map(str, model)))
+            res = []
+            for v in model:
+              if type(v) == int:
+                res.append(str(v))
+              else:
+                res.append(sexp.dumps(v))
+            print(program_name.strip(), " ".join(res))
 
   except sp.CalledProcessError as err:
     print(ERROR_MSG, get_stderr(err))
