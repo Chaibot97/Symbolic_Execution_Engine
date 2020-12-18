@@ -13,5 +13,5 @@ is
     end
     assert x % d = 0;
     assert y % d = 0;
-    assert forall n, ((x % n = 0 && y % n = 0) ==> n <= d);
+    assert forall j, ((x % j = 0 && y % j = 0 && j < i) ==> j <= d);
 end

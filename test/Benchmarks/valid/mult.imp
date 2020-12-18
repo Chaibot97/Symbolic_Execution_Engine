@@ -1,11 +1,11 @@
 program multiply(n m)
   pre n >= 0 
 is
-p := 0;
-x := 0;
-while x < n do
-    x := x + 1;
-    p := p + m;
+  p := 0;
+  x := 0;
+  while x < n do
+      x := x + 1;
+      p := p + m;
   end
-  assert p = n * m;
+  assert p = x * m;
 end

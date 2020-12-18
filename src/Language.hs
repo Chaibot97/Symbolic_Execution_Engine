@@ -51,6 +51,7 @@ instance Show AExp where
 -- Comparisons of expressions
 data Comparison = Comp Order AExp AExp
 instance Show Comparison where
+  show (Comp Neq e1 e2) = printf "(not (= %s %s))" (show e1) (show e2)
   show (Comp ord e1 e2) = printf "(%s %s %s)" (show ord) (show e1) (show e2)
 
 -- Boolean expressions 
@@ -74,6 +75,7 @@ data Assertion = ATrue | AFalse
                | ACmp Comparison
                | ANot Assertion
                | ABinOp BOp Assertion Assertion
+               | AMOp BOp [Assertion]
                | AQ QF [Name] Assertion
 instance Show Assertion where
   show ATrue = "true"
@@ -81,8 +83,13 @@ instance Show Assertion where
   show (ACmp cmp) = show cmp
   show (ANot b) = "(not " ++ show b ++ ")"
   show (ABinOp op b1 b2) = printf "(%s %s %s)" (show op) (show b1) (show b2)
-  show (AQ q xs s) = printf "(%s [%s] %s)" (show q) (unwords xs) (show s)
+  show (AMOp op aa) = printf "(%s %s)" (show op) (unwords (map show aa))
+  show (AQ q xs s) = printf "(%s (%s) %s)" (show q) xts (show s) where
+    xts = typing_to_str (zip xs (repeat TInt))
 
+-- Convert (x, type) to an S-exp string
+typing_to_str :: [Typed] -> String
+typing_to_str ts = intercalate " " (map (\(x,t) -> printf "(%s %s)" x (show t)) ts)
 
 data AST =
     Assign Name AExp
@@ -100,11 +107,11 @@ showStmt :: AST -> [String]
 showStmt (Assign x e) = [x ++ " := " ++ show e ++ ";"]
 showStmt (ParAssign x y ex ey) = [x ++ ", " ++ y ++ " := " ++ show ex ++ ", " ++ show ey ++ ";"]
 showStmt (Write a ei ev) = [printf "%s[%s] := %s;" a (show ei) (show ev)]
-showStmt (If c tb Skip) =
-  [ "if " ++ show c
-  , "then" ] ++
-    indent (showStmt tb) ++
-  [ "end" ]
+-- showStmt (If c tb Skip) =
+--   [ "if " ++ show c
+--   , "then" ] ++
+--     indent (showStmt tb) ++
+--   [ "end" ]
 showStmt (If c tb fb) =
   [ "if " ++ show c
   , "then" ] ++
@@ -117,7 +124,7 @@ showStmt (While c b) =
   [ "do" ] ++
     indent (showStmt b) ++
   [ "end" ]
-showStmt Skip = [ "skip" ]
+showStmt Skip = [ "skip;" ]
 showStmt (Seq b1 b2) = showStmt b1 ++ showStmt b2
 showStmt (Assert assertion) = ["assert " ++ show assertion ++ ";"]
 

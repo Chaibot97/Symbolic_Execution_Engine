@@ -11,5 +11,5 @@ is
     end
     i := i + 1;
   end
-  assert p = 1 ==> (forall i, (2 <= i && i < n) ==> n % i != 0);
+  assert p = 1 ==> (forall j, (2 <= j && j < i) ==> n % j != 0);
 end

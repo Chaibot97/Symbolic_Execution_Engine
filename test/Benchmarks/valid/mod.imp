@@ -17,6 +17,5 @@ is
             i := i - 1;
         end
     end
-    assert 0 <= r && r < n;
     assert n * i + r = a;
 end
