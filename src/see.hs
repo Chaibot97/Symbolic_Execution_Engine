@@ -1,3 +1,5 @@
+{-# LANGUAGE TupleSections #-}
+
 module Main (main) where
 
 import Language
@@ -10,15 +12,20 @@ import System.Environment ( getArgs, )
 import Debug.Trace ( trace )
 
 
--- Convert BExp to Assertion
-bexp2assert :: BExp -> Assertion
-bexp2assert BTrue = ATrue
-bexp2assert BFalse = AFalse
-bexp2assert (BCmp c) = ACmp c
-bexp2assert (BNot b) = ANot (bexp2assert b)
-bexp2assert (BBinOp op b1 b2) = ABinOp op b1' b2' where
-  b1' = bexp2assert b1
-  b2' = bexp2assert b2
+-- Basic idea:
+-- For each 0 <= m <= n, generate an AST that corresponds to the result of
+--   unrolling the original AST m times and contains no more while loops
+-- Then, symbolically execute each unrolled AST:
+--   Assign each parameter with an arbitrary symbolic value, e.g. x \-> _x
+--   Maintain two things in the symbolic execution machine:
+--     the path constraint, analogous the program counter
+--     a mapping from variables to _symbolic expressions_, like an interpreter's environment
+--   Traverse the AST, collecting assertions along the way
+
+
+-- Some definitions:
+-- An AExp is an _symbolic expression_ if it only contains symbolic values
+-- A BExp or an Assertion is _purely symbolic_ if it only contains _symbolic expressions_
 
 
 -- Remove while loops
@@ -40,13 +47,13 @@ unrollOnce s = s
 
 
 -- Unroll each while loop n times
-unroll :: Int -> AST -> AST
-unroll n s = if n == 0 then rmWhile s else unroll (n-1) (unrollOnce s)
+unroll :: AST -> Int -> AST
+unroll s n = if n == 0 then rmWhile s else unroll (unrollOnce s) (n-1)
 
 
--- A sequence of increasingly unrolled programs from 0 to n
-unroll_seq :: Int -> AST -> [AST]
-unroll_seq n s = map (\i -> unroll i s) [0..n]
+-- A sequence of increasingly unrolled programs
+unrollSeq ::  AST -> Int -> [AST]
+unrollSeq s n = map (unroll s) [0..n]
 
 
 -- Things we need to keep track of during symbolic execution
@@ -82,69 +89,106 @@ evalAssertion (AQ q xs a) s = AQ q xs (evalAssertion a s) -- TODO: refresh quant
 evalAssertion a _ = a
 
 
--- The empty state maps everything unconditionally to NaN (of the correct type)
+-- The empty state maps everything unconditionally to variable "_" (of the correct type)
 empty :: State
 empty (_,t) = Var ("_",t)
 
 -- Update the symbolic value of the variable in the state
-update :: (Name, Type, AExp) -> State -> State
-update (x,t,e) s =
-    \(x',t') ->
+update :: State -> (Name, Type, AExp) -> State
+update s (x,t,e) (x',t') =
       if x == x' && t == t'
       then e
       else s (x',t')
 
 updateMany :: State -> [(Name, Type, AExp)] -> State
-updateMany = foldl (\s u -> update u s)
+updateMany = foldl update
 
 
+-- Convert BExp to Assertion
+bexp2assert :: BExp -> Assertion
+bexp2assert BTrue = ATrue
+bexp2assert BFalse = AFalse
+bexp2assert (BCmp c) = ACmp c
+bexp2assert (BNot b) = ANot (bexp2assert b)
+bexp2assert (BBinOp op b1 b2) = ABinOp op b1' b2' where
+  b1' = bexp2assert b1
+  b2' = bexp2assert b2
+
+
+-- Return the conjugation of a list of assertions
 conj :: [Assertion] -> Assertion
-conj = foldl (\acc a -> ABinOp And a acc) ATrue
+conj = foldl (ABinOp And) ATrue
 
 
--- Symbolic execution
+-- Main symbolic execution machine
 type Environment = (Guard, State) -- Guard represents the path constraint
 
+-- Execute program within an environment, and returns a pair (aa, ss)
+-- where
+--   aa is the list of (negated) assertions collected during the execution
+--   ss is the list of all reachable symbolic states after the execution
+-- Invariants:
+--   let env = (path constraint, state). Then the path constraint is purely symbolic
+--   returned assertions are also purely symbolic
+--   input program contains no while loop
 execute :: AST -> Environment -> ([Assertion], [State])
 execute e env@(g,s) = case e of
   Assign x e ->
-      -- only one resulting state
-    ([], [update (x, TInt, evalAExp e s) s])
+    -- only one resulting state
+    ([], [update s (x, TInt, evalAExp e s)])
   Write a ei ev ->
     -- only one resulting state
-    ([], [update (a, TArr, evalAExp a' s) s]) where
+    ([], [update s (a, TArr, evalAExp a' s)]) where
       a' = Store (Var (a, TArr)) ei ev
   Skip ->
     -- state unchanged
     ([], [s])
   If c tb fb ->
-      (a1 ++ a2, ss1 ++ ss2) where
-        cA = bexp2assert (evalBExp c s)
-        not_cA = ANot cA
-        -- augment path constraint with T/F conditions
-        (a1, ss1) = execute tb (cA:g, s)
-        (a2, ss2) = execute fb (not_cA:g, s)
+    -- execute each branch with updated path constraint, and
+    -- union the resulting assertions and reachable states
+    (a1 ++ a2, ss1 ++ ss2) where
+      cA = bexp2assert (evalBExp c s)
+      not_cA = ANot cA
+      -- augment path constraint with T/F conditions
+      (a1, ss1) = execute tb (cA:g, s)
+      (a2, ss2) = execute fb (not_cA:g, s)
   Seq b1 b2 ->
+    -- execute the 2nd block from all reachable states once the 1st block
+    -- finished execution
+    -- union the assertions, and return reachable states once 2nd block is done
     (a1 ++ a2, ss2) where
       (a1, ss1) =  execute b1 env
-      res = map (execute b2) (map (\s -> (g,s)) ss1)
-      a2 = concat $ map fst res
-      ss2 = concat $ map snd res
+      res = map (execute b2 . (g,)) ss1
+      a2 = concatMap fst res
+      ss2 = concatMap snd res
   Assert a ->
-    ( [conj (evalAssertion a s : g)], [s] )
+    -- return the assertion: not (path constraint => a), i.e. constraint /\ not a
+    -- and state remains unchanged
+    ( [conj (ANot (evalAssertion a s) : g)], [s] )
   While _ _ ->
+    -- assume loops are fully unrolled and eliminated before symbolic execution
     error "symbolic execution does not support loops"
-  ParAssign _ _ _ _ ->
+  ParAssign {} ->
+    -- TODO: implement parallel assignment
     error "Parallel assignment not implemented"
 
-r = execute Skip ([ATrue], empty)
-
-initVar :: [Typed] -> State
-initVar = foldl (\st (x,t) -> update (x, t, x_sym x t) st) empty where
+-- Initialize state by mapping input variables to (arbitrary) symbolic values
+initialState :: [Typed] -> State
+initialState = foldl (\st (x,t) -> update st (x, t, x_sym x t)) empty where
   x_sym = \x t -> Var ("_" ++ x, t) -- symbolic initial value for variable x
 
 
--- DEBUG
+-- DEBUGGING: how-to
+-- Note: to debug interactively using GHCi, do the following:
+--  1. uncomment the line in this file that imports the Parser
+--  2. in the project folder, run `ghci`
+--  3. run `:cd src` and then `:load see.hs`
+--  4. debug
+--  5. reload the file using `:reload`. repeat step 4
+
+-- DEBUGGING: stuff
+-- r :: ([Assertion], [State])
+-- r = execute Skip ([ATrue], empty)
 -- st = updateMany empty [
 --    ("i", TInt, Var ("_i", TInt)), 
 --    ("x", TInt, Var ("_x", TInt)), 
@@ -162,7 +206,7 @@ main = do
   prog <- readFile (head as) 
   let n = read (head (tail as)) :: Int
   let p = parseProg prog
-  putStrLn (show p)
+  print p
 
   
  
