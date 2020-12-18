@@ -7,9 +7,9 @@ import Parser.Parser ( parseProg )
 
 import Data.List ( intercalate, )
 import Data.Set (Set)
-import qualified Data.Set as S (empty, singleton, difference, unions, fromList, map, toList )  
+import qualified Data.Set as S (empty, singleton, difference, union, unions, fromList, map, toList )  
 import Data.Map (Map, (!))
-import qualified Data.Map as Map (insert, fromList, mapAccumWithKey, lookup)
+import qualified Data.Map as Map (insert, fromList, mapAccumWithKey, keys, elems, lookup)
 import Text.Printf ( printf )
 import System.Environment ( getArgs, )
 import Debug.Trace ( trace )
@@ -80,7 +80,9 @@ updateMany = foldl update
 -- Basically, replace non-symbolic names with symbolic values
 evalAExp :: State -> AExp -> AExp
 evalAExp _ (Num n) = Num n
-evalAExp s (Var (x,t)) = s ! (x,t)
+evalAExp s (Var (x,t)) = case Map.lookup (x,t) s of
+  Just e -> e
+  Nothing -> error ("Not found: " ++ typedToString (x,t))
 evalAExp s (BinOp op e1 e2) = BinOp op (evalAExp s e1) (evalAExp s e2)
 evalAExp s (Read ea ei) = Read (evalAExp s ea) (evalAExp s ei)
 evalAExp s (Store ea ei ev) = Store (evalAExp s ea) (evalAExp s ei) (evalAExp s ev)
@@ -129,62 +131,72 @@ type Environment = (Guard, State) -- Guard represents the path constraint
 --   input program contains no while loop
 -- Invariants:
 --   let env = (path constraint, state). Then the path constraint is purely symbolic
-execute :: AST -> Environment -> ([Assertion], [State])
-execute e env@(g,s) = case e of
-  Assign x e' ->
-    -- only one resulting state
-    ([], [update s ((x, TInt), e')])
-  Write a ei ev ->
-    -- only one resulting state
-    ([], [update s ((a, TArr), a')]) where
-      a' = Store (Var (a, TArr)) ei ev
-  Skip ->
-    -- state unchanged
-    ([], [s])
-  If c tb fb ->
-    -- execute each branch with updated path constraint, and
-    -- union the resulting assertions and reachable states
-    (a1 ++ a2, ss1 ++ ss2) where
-      cA = assertBExp (evalBExp s c)
-      not_cA = ANot cA
-      -- augment path constraint with T/F conditions
-      (a1, ss1) = execute tb (cA:g, s)
-      (a2, ss2) = execute fb (not_cA:g, s)
-  Seq b1 b2 ->
-    -- execute the 2nd block from all reachable states once the 1st block
-    -- finished execution
-    -- union the assertions, and return reachable states once 2nd block is done
-    (a1 ++ concat aa2, concat ss2) where
-      (a1, ss1) =  execute b1 env
-      res = map (execute b2 . (g,)) ss1
-      (aa2, ss2) = unzip res
-  Assert a ->
-    -- return the assertion: not (path constraint => a), i.e. constraint /\ not a
-    -- and state remains unchanged
-    ( [conj (ANot a : g ++ assertState s)], [s] )
-  While _ _ ->
-    -- assume loops are fully unrolled
-    ([], [s])
-  ParAssign x1 x2 e1 e2 ->
-    ([], [ updateMany s [((x1, TInt), e1), ((x2, TInt), e2)] ])
+execute :: AST -> Environment -> ([Assertion], [Environment])
+execute e env@(g,s) = 
+  -- trace ("Guard: " ++ show g ++ ". Program: " ++ (unwords $ showStmt e)) rrr where
+  case e of
+    Assign x e' ->
+      -- only one resulting state
+      ([], [(g, update s ((x, TInt), e'))])
+    Write a ei ev ->
+      -- only one resulting state
+      ([], [(g, update s ((a, TArr), a'))]) where
+        a' = Store (Var (a, TArr)) ei ev
+    Skip ->
+      -- environment unchanged
+      ([], [env])
+    If c tb fb ->
+      -- execute each branch with updated path constraint, and
+      -- union the resulting assertions and reachable states
+      (a1 ++ a2, ss1 ++ ss2) where
+        cA = assertBExp (evalBExp s c)
+        not_cA = trace (show cA) (ANot cA)
+        -- augment path constraint with T/F conditions
+        (a1, ss1) = execute tb (cA:g, s)
+        (a2, ss2) = execute fb (not_cA:g, s)
+    Seq b1 b2 ->
+      -- execute the 2nd block from all reachable states once the 1st block
+      -- finished execution
+      -- union the assertions, and return reachable states once 2nd block is done
+      (a1 ++ concat aa2, concat envs2) where
+        (a1, envs1) = execute b1 env
+        res = map (execute b2) envs1
+        (aa2, envs2) = unzip res
+    Assert a ->
+      -- return the assertion: not (path constraint => a), i.e. constraint /\ not a
+      -- and state remains unchanged
+      ( [conj (ANot a : g ++ assertState s)], [env] )
+    While _ _ ->
+      -- assume loops are fully unrolled
+      ([], [env])
+    ParAssign x1 x2 e1 e2 ->
+      ([], [(g, updateMany s [((x1, TInt), e1), ((x2, TInt), e2)])])
 
 
 -- Initialize state by mapping input variables to (arbitrary) symbolic values
 initialState :: [Typed] -> State
 initialState ts = Map.fromList (map x_sym ts) where
-  x_sym (x,t) = ((x,t), Var (initialValue (x,t), t)) -- symbolic initial value for variable x
+  x_sym (x,t) = ((x,t), Var (initialValue (x,t))) -- symbolic initial value for variable x
 
-initialValue :: Typed -> String
-initialValue (x,t) = "_" ++ x
+initialValue :: Typed -> Typed
+initialValue (x,t) = ("_" ++ x,t)
 
 -- Wrapper for the symbolic execution machine
 see :: Int -> Program -> (AST, [String])
 see n Program {name=_, param=ps, pre=p, ast=t} = (t', res) where
   t' = unroll t n
-  (aa, _) = execute t' (p, initialState ps)
-  res = map (\a -> assertionToString a ++ check ++ get_value) aa
-  check = "(check-sat)"
-  get_value = printf "(get-value (%s))" (unwords (map initialValue ps))
+  initState = initialState ps
+  (aa, _) = execute t' (p, initState)
+  res = map (intercalate "\n" . wrap) aa
+  wrap a = [xtStr, "", aStr, check, get_value] where
+    psSet = S.fromList (Map.keys initState)
+    psValSet = S.map initialValue psSet
+    xtSet = S.unions [collectVarsInAssertion a, psSet, psValSet]
+    declareTypes xt = printf "(declare-const %s)" (typedToString xt)
+    xtStr = intercalate "\n" (map declareTypes (S.toList xtSet))
+    aStr = printf "(assert %s)" (show a)
+    check = "(check-sat)"
+    get_value = printf ";%s" (unwords $ S.toList $ S.map fst psValSet)
 
 
 -- Collect variables in an AExp
@@ -207,14 +219,6 @@ collectVarsInAssertion (AQ _ qVars a) =
     s = collectVarsInAssertion a
     sq = S.map (, TInt) (S.fromList qVars)
 collectVarsInAssertion _ = S.empty
-
-
-assertionToString :: Assertion -> String
-assertionToString a = intercalate "\n" (tt ++ [aStr]) where
-  declareTypes xt = printf "(declare-const %s)" (typedToString xt)
-  xtSet = collectVarsInAssertion a
-  tt = map declareTypes (S.toList xtSet)
-  aStr = printf "(assert %s)" (show a)
 
 
 -- DEBUGGING: how-to
@@ -248,10 +252,11 @@ main = do
   prog <- readFile (head as) 
   let n = read (head (tail as)) :: Int
   let p = parseProg prog
-  let (p',ss) = see n p
-  -- print p
-  -- print (rmWhile p')
-  putStrLn (intercalate "\n\n;SEP\n\n" (name p: ss))
+  let (p', ss) = see n p
+  let pStr = intercalate "\n" (prefix "; " (showStmt $ rmWhile p'))
+  let ss' = map (\s -> pStr ++ "\n" ++ s) ss
+
+  putStrLn (intercalate "\n\n;SEP\n\n" (name p: ss'))
 
   
  
