@@ -31,34 +31,41 @@ if __name__ == "__main__":
     cmd = f"cabal -v0 run see-hs {args.file.name} {args.n}"
     res = sp.run(cmd, shell=True, capture_output=True, check=True)
     out = get_stdout(res)
-    program_name, *formulas = out.split("\n;SEP\n")
-    
-    if args.dry_run: # dry run
-      print(formulas)
+    program_name, *formulas = out.split("\n\n;SEP\n\n")
+
+    if len(formulas) == 0:
+      print("No assertion to check")
     
     else:
-      models = list()
-      for formula in formulas:
-        cmd = f"echo \"{formula}\" | z3 -in"
-        res = sp.run(cmd, shell=True, capture_output=True, check=True)
-        out = [l.strip() for l in get_stdout(res).split('\n')]
-
-        if "sat" in out:
-          model_str = "".join(out[1:])
-          model = [pair[1] for pair in sexp.loads(model_str)]
-          models.append(model)
-        elif "unsat" in out:
-          pass
-        else:
-          raise ValueError("Output is neither sat nor unsat")
+      if args.dry_run: # dry run
+        for i, formula in enumerate(formulas):
+          print(f"; Formula {i}")
+          print(formula)
+          print()
       
-      if len(models) == 0:
-        print(VALID_MSG)
-
       else:
-        print(INVALID_MSG)
-        for model in models:
-          print(program_name.strip(), " ".join(map(str, model)))
+        models = list()
+        for formula in formulas:
+          cmd = f"echo \"{formula}\" | z3 -in"
+          res = sp.run(cmd, shell=True, capture_output=True, check=True)
+          out = [l.strip() for l in get_stdout(res).split('\n')]
+
+          if "sat" in out:
+            model_str = "".join(out[1:])
+            model = [pair[1] for pair in sexp.loads(model_str)]
+            models.append(model)
+          elif "unsat" in out:
+            pass
+          else:
+            raise ValueError("Output is neither sat nor unsat")
+        
+        if len(models) == 0:
+          print(VALID_MSG)
+
+        else:
+          print(INVALID_MSG)
+          for model in models:
+            print(program_name.strip(), " ".join(map(str, model)))
 
   except sp.CalledProcessError as err:
     print(ERROR_MSG, get_stderr(err))
