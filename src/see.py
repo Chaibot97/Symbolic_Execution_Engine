@@ -28,18 +28,22 @@ if __name__ == "__main__":
   try:
     cmd = f"cabal -v0 run see-hs {args.file.name} {args.n}"
     res = sp.run(cmd, shell=True, capture_output=True, check=True)
+    formula = get_stdout(res)
     
     if args.dry_run: # dry run
-      print(get_stdout(res))
+      print(formula)
     
     else:
-      cmd = f"echo \"{res}\" | z3 -in"
+      print(formula)
+      # TODO for loop on args.n
+      cmd = f"echo \"{formula}\" | z3 -in"
       res = sp.run(cmd, shell=True, capture_output=True, check=True)
       
       if get_stdout(res) == "sat":
-        print(VALID_MSG)
-      else:
         print(INVALID_MSG)
+        # TODO parse SAT assignment
+      elif get_stdout(res) == "unsat":
+        print(VALID_MSG)
 
   except sp.CalledProcessError as err:
     print(ERROR_MSG, get_stderr(err))
