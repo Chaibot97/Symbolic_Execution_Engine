@@ -1,4 +1,4 @@
-program find(n x)
+program find(a[] n x N)
   pre  0 <= N
 is
   n := 0;
