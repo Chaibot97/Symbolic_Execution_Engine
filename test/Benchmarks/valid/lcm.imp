@@ -11,5 +11,5 @@ is
         end
     end
     lcm := (A * B) / gcd;
-    assert A <= lcm && lcm <= A * B && B <= lcm;
+    assert A % gcd = 0 && B % gcd = 0;
 end

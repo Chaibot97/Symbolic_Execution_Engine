@@ -3,10 +3,9 @@ program multiply(n m)
 is
   p := 0;
   x := 0;
-  assert p = x * m;
   while x < n do
       x := x + 1;
       p := p + m;
-      assert p = x * m;
   end
+  assert p = x * m;
 end

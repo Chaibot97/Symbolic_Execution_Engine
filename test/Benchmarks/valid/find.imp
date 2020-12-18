@@ -6,5 +6,5 @@ is
   do
     n := n + 1;
   end
-  assert a[n] = x || (forall i, (0 <= i && i < N) ==> a[i] != x);
+  assert forall i, (0 <= i && i < n) ==> a[i] != x;
 end

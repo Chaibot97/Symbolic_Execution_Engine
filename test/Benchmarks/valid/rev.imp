@@ -7,5 +7,5 @@ is
     a[i] := b[N-i];
     i := i + 1;
   end
-  assert forall i, 0 <= i && i < N ==> a[i] = b[N-i];
+  assert forall j, 0 <= j && j < i ==> a[j] = b[N-j];
 end
