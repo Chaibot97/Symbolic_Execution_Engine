@@ -92,9 +92,34 @@ evalAssertion ::  Assertion -> State -> Assertion
 evalAssertion (ACmp (Comp ord e1 e2)) s = ACmp (Comp ord (evalAExp e1 s) (evalAExp e2 s))
 evalAssertion (ANot a) s = ANot (evalAssertion a s)
 evalAssertion (ABinOp op a1 a2) s = ABinOp op (evalAssertion a1 s) (evalAssertion a2 s)
-evalAssertion (AQ q xs a) s = AQ q xs (evalAssertion a s) -- TODO: need to refresh quantified variables
+evalAssertion old@(AQ _ _ _) s = AQ q xs (evalAssertion a s) where new@(AQ q xs a) =  refreshVal old-- TODO: need to refresh quantified variables
 evalAssertion a _ = a
 
+refreshVal :: Assertion -> Assertion
+refreshVal (AQ q xs a) = AQ q (map fresh xs) (refreshAssert xs (refreshVal a))
+
+refreshAexp :: [Name] -> AExp -> AExp
+refreshAexp _ (Num n) = Num n
+refreshAexp n v@(Var (x,t)) =  if notElem x n then v else Var (fresh x,t)
+refreshAexp n (BinOp op e1 e2) = BinOp op (refreshAexp n e1) (refreshAexp n e1)
+refreshAexp n (Read ea ei) = Read (refreshAexp n ea) (refreshAexp n ei)
+refreshAexp n (Store ea ei ev) = Store (refreshAexp n ea) (refreshAexp n ei) (refreshAexp n ev)
+
+refreshBexp :: [Name] ->BExp -> BExp 
+refreshBexp n (BCmp (Comp ord e1 e2))= BCmp (Comp ord (refreshAexp n e1) (refreshAexp n e2))
+refreshBexp n (BNot e)= BNot (refreshBexp n e)
+refreshBexp n (BBinOp op e1 e2)= BBinOp op (refreshBexp n e1) (refreshBexp n e2)
+refreshBexp _ e = e
+
+refreshAssert :: [Name] -> Assertion -> Assertion
+refreshAssert n (ACmp (Comp ord e1 e2)) = ACmp (Comp ord (refreshAexp n e1) (refreshAexp n e2))
+refreshAssert n (ANot a) = ANot (refreshAssert n a)
+refreshAssert n (ABinOp op a1 a2)= ABinOp op (refreshAssert n a1) (refreshAssert n a2)
+refreshAssert n (AQ q xs a) = AQ q xs (refreshAssert n a)
+refreshAssert _ a = a
+
+fresh :: Name -> Name
+fresh old = trace old old ++ "_fv"
 
 -- The empty state maps everything unconditionally to variable "_" (of the correct type)
 empty :: State
@@ -175,9 +200,9 @@ execute e env@(g,s) = case e of
   While _ _ ->
     -- assume loops are fully unrolled and eliminated before symbolic execution
     error "symbolic execution does not support loops"
-  ParAssign {} ->
+  ParAssign x1 x2 e1 e2 ->
     -- TODO: implement parallel assignment
-    error "Parallel assignment not implemented"
+    ([], [updateMany s [(x1, TInt, evalAExp e1 s), (x2, TInt, evalAExp e2 s)]])
 
 -- Initialize state by mapping input variables to (arbitrary) symbolic values
 initialState :: [Typed] -> State
