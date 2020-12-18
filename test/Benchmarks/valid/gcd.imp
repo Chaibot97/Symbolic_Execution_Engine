@@ -1,4 +1,4 @@
-program gcd
+program gcd(x y)
     pre x > 0
     pre y > 0
 is
@@ -11,7 +11,7 @@ is
         end
         i := i + 1;
     end
-    assert x % d = 0
-    assert y % d = 0
-    assert forall n, ((x % n = 0 && y % n = 0) ==> n <= d)
+    assert x % d = 0;
+    assert y % d = 0;
+    assert forall n, ((x % n = 0 && y % n = 0) ==> n <= d);
 end

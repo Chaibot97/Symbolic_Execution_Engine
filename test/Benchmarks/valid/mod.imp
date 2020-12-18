@@ -1,4 +1,4 @@
-program mod
+program mod(n a)
     pre  0 < n
 is
     i := 0;
@@ -17,6 +17,6 @@ is
             i := i - 1;
         end
     end
-    assert 0 <= r && r < n
-    assert n * i + r = a
+    assert 0 <= r && r < n;
+    assert n * i + r = a;
 end

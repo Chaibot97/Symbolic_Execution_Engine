@@ -1,9 +1,9 @@
-program order
+program order(x y)
 is
   if x > y then
     x, y := y, x;
   else
     x, y := x, y;
   end
-  assert x <= y
+  assert x <= y;
 end

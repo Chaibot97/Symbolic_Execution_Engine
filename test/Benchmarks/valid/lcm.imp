@@ -1,4 +1,4 @@
-program LCM
+program lcm(A B)
     pre 0 <= A && 0 <= B
     pre A != 0 || B != 0
 is
@@ -10,6 +10,6 @@ is
             gcd := j;
         end
     end
-    lcm := (A*B)/gcd;
-    assert A<=lcm && lcm<=A*B && B<=lcm
+    lcm := (A * B) / gcd;
+    assert A <= lcm && lcm <= A * B && B <= lcm;
 end

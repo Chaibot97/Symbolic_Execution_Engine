@@ -1,4 +1,4 @@
-program rev
+program rev(a[] b[] N)
   pre 0 <= N
 is
   i := 0;
@@ -7,5 +7,5 @@ is
     a[i] := b[N-i];
     i := i + 1;
   end
-  assert forall i, 0 <= i && i < N ==> a[i] = b[N-i]
+  assert forall i, 0 <= i && i < N ==> a[i] = b[N-i];
 end
