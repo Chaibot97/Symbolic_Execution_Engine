@@ -84,24 +84,21 @@ list(p)
      | list_plus(p)   { $1 }
 
 prog :: { Program }
-     : "program" name '(' list(param) ')' list(pre) "is" block "end"
-       { Program{name = $2, param = $4, pre = $6, block = $8} }
+     : "program" name '(' list(param) ')' list(pre) "is" stmtSeq "end"
+       { Program{name = $2, param = $4, pre = $6, ast = $8} }
 
-param :: {Param}
-     : name {PVar $1}
-     | name '['']' {PArr $1}
+param :: {Typed}
+     : name { ($1, TInt) }
+     | name '['']' { ($1, TArr) }
 
 pre  :: { Assertion }
      : "pre"  assertion   { $2 }
-
-block :: { Block }
-      : list_plus(stmt)   { $1 }
  
 arithExp :: { AExp }
          : int { Num $1 }
-         | name { Var $1 }
+         | name { Var ($1, TInt) }
          | '-' arithExp { BinOp Sub (Num 0) $2 }
-         | name '[' arithExp ']' { Read (Arr $1) $3 }
+         | name '[' arithExp ']' { Read (Var ($1, TArr)) $3 }
          | arithExp '+' arithExp { BinOp Add $1 $3 }
          | arithExp '-' arithExp { BinOp Sub $1 $3 }
          | arithExp '*' arithExp { BinOp Mul $1 $3 }
@@ -139,15 +136,18 @@ assertion :: { Assertion }
           | '(' assertion ')' { $2 }
           {- | '(' assertion ')' { AParens $2} -}
 
-stmt :: { Statement }
+stmtSeq :: { AST }
+        : stmt { $1 }
+        | stmt stmtSeq { Seq $1 $2 }
+
+stmt :: { AST }
      : name ":=" arithExp ';' { Assign $1 $3 }
      | name ',' name ":=" arithExp ',' arithExp ';' { ParAssign $1 $3 $5 $7 }
      | name '[' arithExp ']' ":=" arithExp ';' { Write $1 $3 $6 }
-     | "if" boolExp "then" block "else" block "end" { If $2 $4 $6 }
-     | "if" boolExp "then" block "end" { If $2 $4 [] }
-     | "while" boolExp "do" block "end" { While $2 $4 }
+     | "if" boolExp "then" stmtSeq "else" stmtSeq "end" { If $2 $4 $6 }
+     | "if" boolExp "then" stmtSeq "end" { If $2 $4 Skip }
+     | "while" boolExp "do" stmtSeq "end" { While $2 $4 }
      | "skip" ';' { Skip }
-     | "assert" assertion {Assert $2}
      | "assert" assertion ';' {Assert $2}
 
 {
