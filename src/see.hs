@@ -16,16 +16,23 @@ import Debug.Trace ( trace )
 -- For each 0 <= m <= n, generate an AST that corresponds to the result of
 --   unrolling the original AST m times and contains no more while loops
 -- Then, symbolically execute each unrolled AST:
---   Assign each parameter with an arbitrary symbolic value, e.g. x \-> _x
---   Maintain two things in the symbolic execution machine:
+--   Assign each parameter with an arbitrary symbolic variable, e.g. x |-> _x
+--   Keep track of two things in the symbolic execution machine:
 --     the path constraint, analogous the program counter
 --     a mapping from variables to _symbolic expressions_, like an interpreter's environment
 --   Traverse the AST, collecting assertions along the way
 
 
 -- Some definitions:
--- An AExp is an _symbolic expression_ if it only contains symbolic values
--- A BExp or an Assertion is _purely symbolic_ if it only contains _symbolic expressions_
+-- An AExp is an _symbolic expression_ if
+--   the only variables it contains are symbolic variables
+-- A BExp or an Assertion is _purely symbolic_ if
+--   it only contains _symbolic expressions_
+
+
+-- TODO
+-- During preprocessing stage, replace every quantified variable with a fresh name
+-- Implement parallel assignment
 
 
 -- Remove while loops
@@ -85,7 +92,7 @@ evalAssertion ::  Assertion -> State -> Assertion
 evalAssertion (ACmp (Comp ord e1 e2)) s = ACmp (Comp ord (evalAExp e1 s) (evalAExp e2 s))
 evalAssertion (ANot a) s = ANot (evalAssertion a s)
 evalAssertion (ABinOp op a1 a2) s = ABinOp op (evalAssertion a1 s) (evalAssertion a2 s)
-evalAssertion (AQ q xs a) s = AQ q xs (evalAssertion a s) -- TODO: refresh quantified variables
+evalAssertion (AQ q xs a) s = AQ q xs (evalAssertion a s) -- TODO: need to refresh quantified variables
 evalAssertion a _ = a
 
 
