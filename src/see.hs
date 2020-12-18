@@ -73,7 +73,8 @@ get s (x,t) = case lookup (x,t) s of
 
 -- Update the symbolic value of the variable in the state
 update :: State -> (Typed, AExp) -> State
-update s u = u : s
+update (s@(x',_):t) u@(x,e) = if x'== x then u : t else s:(update t u)
+update [] u = u:[]
 
 updateMany :: State -> [(Typed, AExp)] -> State
 updateMany = foldl update
