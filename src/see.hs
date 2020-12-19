@@ -189,14 +189,14 @@ see n Program {name=_, param=ps, pre=p, ast=t} = (t', res) where
   (aa, _) = execute t' (p, initState)
   res = map (intercalate "\n" . wrap) aa
   wrap a = [xtStr, "", aStr, check, get_value] where
-    psSet = S.fromList (Map.keys initState)
+    psSet = S.fromList ps
     psValSet = S.map initialValue psSet
     xtSet = S.unions [collectVarsInAssertion a, psSet, psValSet]
     declareTypes xt = printf "(declare-const %s)" (typedToString xt)
     xtStr = intercalate "\n" (map declareTypes (S.toList xtSet))
     aStr = printf "(assert %s)" (show a)
     check = "(check-sat)"
-    get_value = printf ";%s" (unwords $ S.toList $ S.map fst psValSet)
+    get_value = printf ";%s" (unwords $ map (fst . initialValue) ps)
 
 
 -- Collect variables in an AExp
