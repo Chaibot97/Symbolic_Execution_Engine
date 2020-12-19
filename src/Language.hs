@@ -84,8 +84,9 @@ instance Show Assertion where
   show (ANot b) = "(not " ++ show b ++ ")"
   show (ABinOp op b1 b2) = printf "(%s %s %s)" (show op) (show b1) (show b2)
   show (AMOp op aa) = printf "(%s %s)" (show op) (unwords (map show aa))
-  show (AQ q xs s) = printf "(%s (%s) %s)" (show q) xts (show s) where
-    xts = unwords (map typedToString (zip xs (repeat TInt)))
+  show (AQ q xs s) = printf "(%s (%s) %s)" (show q) xtsStr (show s) where
+    xts = zip xs (repeat TInt)
+    xtsStr = unwords $ map (\xt -> "(" ++ typedToString xt ++ ")") xts
 
 -- Convert (x, type) to an S-exp string
 typedToString :: Typed -> String

@@ -31,7 +31,6 @@ if __name__ == "__main__":
     cmd = f"cabal -v0 run see-hs {args.file.name} {args.n}"
     res = sp.run(cmd, shell=True, capture_output=True, check=True)
     out = get_stdout(res)
-    print(get_stderr(res))
     program_name, *formulas = out.split("\n\n;SEP\n\n")
 
     if len(formulas) == 0:
