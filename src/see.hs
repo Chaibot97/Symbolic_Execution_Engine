@@ -16,9 +16,9 @@ import Debug.Trace ( trace )
 
 
 -- Basic idea:
--- For each 0 <= m <= n, generate an AST that corresponds to the result of
---   unrolling the original AST m times and contains no more while loops
--- Then, symbolically execute each unrolled AST:
+-- Generate an AST that corresponds to the result of
+--   unrolling the original AST m times
+-- Then, symbolically execute the unrolled AST:
 --   Assign each parameter with an arbitrary symbolic variable, e.g. x |-> _x
 --   Keep track of two things in the symbolic execution machine:
 --     the path constraint, analogous the program counter
@@ -31,11 +31,6 @@ import Debug.Trace ( trace )
 --   the only variables it contains are symbolic variables
 -- A BExp or an Assertion is _purely symbolic_ if
 --   it only contains _symbolic expressions_
-
-
--- TODO
--- During preprocessing stage, replace every quantified variable with a fresh name
--- Implement parallel assignment
 
 
 -- Remove while loops
@@ -123,23 +118,21 @@ conj aa = AMOp And aa
 -- Main symbolic execution machine
 type Environment = (Guard, State) -- Guard represents the path constraint
 
--- Execute program within an environment, and returns a pair (aa, ss)
+-- Execute program within an environment, and returns a pair (aa, envs)
 -- where
 --   aa is the list of (negated) assertions collected during the execution
---   ss is the list of all reachable symbolic states after the execution
--- Preconditions:
---   input program contains no while loop
+--   envs is the list of possible environments after the execution
 -- Invariants:
---   let env = (path constraint, state). Then the path constraint is purely symbolic
+--   The path constraint is purely symbolic
 execute :: AST -> Environment -> ([Assertion], [Environment])
 execute e env@(g,s) = 
   -- trace ("Guard: " ++ show g ++ ". Program: " ++ (unwords $ showStmt e)) rrr where
   case e of
     Assign x e' ->
-      -- only one resulting state
+      -- only one resulting environment
       ([], [(g, update s ((x, TInt), e'))])
     Write a ei ev ->
-      -- only one resulting state
+      -- only one resulting environment
       ([], [(g, update s ((a, TArr), a'))]) where
         a' = Store (Var (a, TArr)) ei ev
     Skip ->
@@ -147,7 +140,7 @@ execute e env@(g,s) =
       ([], [env])
     If c tb fb ->
       -- execute each branch with updated path constraint, and
-      -- union the resulting assertions and reachable states
+      -- union the resulting assertions and environments
       (a1 ++ a2, ss1 ++ ss2) where
         cA = assertBExp (evalBExp s c)
         not_cA = trace (show cA) (ANot cA)
@@ -155,19 +148,19 @@ execute e env@(g,s) =
         (a1, ss1) = execute tb (cA:g, s)
         (a2, ss2) = execute fb (not_cA:g, s)
     Seq b1 b2 ->
-      -- execute the 2nd block from all reachable states once the 1st block
-      -- finished execution
-      -- union the assertions, and return reachable states once 2nd block is done
+      -- execute the 2nd block from all environments resulted from
+      -- executing the 1st block. Then union the assertions, and return the 
+      -- environments resulting from executing the 2nd block
       (a1 ++ concat aa2, concat envs2) where
         (a1, envs1) = execute b1 env
         res = map (execute b2) envs1
         (aa2, envs2) = unzip res
     Assert a ->
-      -- return the assertion: not (path constraint => a), i.e. constraint /\ not a
-      -- and state remains unchanged
+      -- return the assertion: neg (path constraint => a), i.e. 
+      -- constraint /\ not a. The environment remains unchanged
       ( [conj (ANot a : g ++ assertState s)], [env] )
     While _ _ ->
-      -- assume loops are fully unrolled
+      -- ignore while loops as we assume loops have been fully unrolled
       ([], [env])
     ParAssign x1 x2 e1 e2 ->
       ([], [(g, updateMany s [((x1, TInt), e1), ((x2, TInt), e2)])])
@@ -180,6 +173,7 @@ initialState ts = Map.fromList (map x_sym ts) where
 
 initialValue :: Typed -> Typed
 initialValue (x,t) = ("_" ++ x,t)
+
 
 -- Wrapper for the symbolic execution machine
 see :: Int -> Program -> (AST, [String])
@@ -214,40 +208,14 @@ collectVarsInAssertion (ACmp (Comp _ e1 e2)) = S.unions (map collectVars [e1,e2]
 collectVarsInAssertion (ANot a) = collectVarsInAssertion a
 collectVarsInAssertion (ABinOp _ a1 a2) = S.unions (map collectVarsInAssertion [a1,a2])
 collectVarsInAssertion (AMOp _ aa) = S.unions (map collectVarsInAssertion aa)
-collectVarsInAssertion (AQ _ qVars a) = 
-  (S.difference s sq) where
+collectVarsInAssertion (AQ _ qVars a) = S.difference s sq where
     s = collectVarsInAssertion a
     sq = S.map (, TInt) (S.fromList qVars)
 collectVarsInAssertion _ = S.empty
 
 
--- DEBUGGING: how-to
--- Note: to debug interactively using GHCi, do the following:
---  1. uncomment the line in this file that imports the Parser
---  2. in the project folder, run `ghci`
---  3. run `:cd src` and then `:load see.hs`
---  4. debug
---  5. reload the file using `:reload`. repeat step 4
-
--- DEBUGGING: stuff
--- storeArr :: AExp
--- storeArr = (Store (Var ("_a", TArr)) (Var ("_i", TInt)) (Var ("_x", TInt)))
--- a= (AQ Forall ["_i"] (ACmp (Comp Eq (storeArr) (Var ("b",TArr)))))
--- r :: ([Assertion], [State])
--- r = execute Skip ([ATrue], empty)
--- st = updateMany empty [
---    ("i", TInt, Var ("_i", TInt)), 
---    ("x", TInt, Var ("_x", TInt)), 
---    ("a", TArr, store_a) ]
-
--- inc_arr = (Store (Var ("a",TArr)) (Var ("i",TInt)) (BinOp Add (Read (Var ("a",TArr)) (Var ("i",TInt))) (Var ("x",TInt))))
--- st' = update ("a", TArr, evalAExp inc_arr st) st
--- inc_x = (BinOp Add (Var ("x",TInt)) (Var ("x",TInt)))
--- st'' = update ("x", TInt, evalAExp inc_x st') st'
-
 main :: IO ()
 main = do
-  -- putStrLn "hi"
   as <- getArgs
   prog <- readFile (head as) 
   let n = read (head (tail as)) :: Int
