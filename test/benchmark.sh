@@ -1,22 +1,25 @@
 #!/bin/bash
 
-suites=("../Benchmarks" "../Benchmarks_ORI")
-cases=(valid invalid)
-valid_msg="unsat"
-invalid_msg="sat"
-for suite in "${suites[@]}"; do
-  seq  -f "-" -s "" 50
-  echo "$suite"
-  for case in "${cases[@]}"; do
-    find "$suite"/$case -name "*.imp" | while read t; do
-      printf "$t >>> "
-      out=$(./vcgen.sh "$t" --vc | z3 -in -t:3000)
-      if [[ $case == valid && "$out" == "$valid_msg" ]] || [[ "$case" == invalid && "$out" == "$invalid_msg" ]]; then
-        echo ok
-      else
-        echo failed / timeout
-        echo "$out"
-      fi
-    done
+for i in {0..5}; do
+  for f in test/benchmarks/invalid/*.imp; do
+    printf "$f.. " 
+    out=$(bin/see "$f" $i | grep "Not verified")
+    if [ $? -ne 0 ]; then
+      echo "failed"
+    else
+      echo "ok"
+    fi
+  done
+done
+
+for i in {0..3}; do
+  for f in test/benchmarks/valid/*.imp; do
+    printf "$f.. "
+    out=$(bin/see "$f" $i | grep "Verified")
+    if [ $? -ne 0 ]; then
+      echo "failed"
+    else
+      echo "ok"
+    fi
   done
 done

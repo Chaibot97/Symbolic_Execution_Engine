@@ -34,6 +34,7 @@ if __name__ == "__main__":
     program_name, *formulas = out.split("\n\n;SEP\n\n")
 
     if len(formulas) == 0:
+      print(VALID_MSG)
       print("No assertion to check")
     
     else:
