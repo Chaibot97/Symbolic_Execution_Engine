@@ -15,22 +15,30 @@ parser.add_argument("-d", "--dry-run", action="store_true", help="only print the
 VALID_MSG = "Verified"
 INVALID_MSG = "Not verified"
 ERROR_MSG = "Error"
+ENCODING = "utf-8"
 
 
-def get_stdout(res):
-  return res.stdout.decode('utf-8').strip()
+def decode_pair(pair, post=lambda s: s.strip()):
+  decode = lambda b: None if b is None else post(b.decode(ENCODING))
+  return tuple(map(decode, pair))
 
-def get_stderr(res):
-  return res.stderr.decode('utf-8').strip()
-
+def get_output(res):
+  return decode_pair((res.stdout, res.stderr))
 
 if __name__ == "__main__":
   args = parser.parse_args()
   
+  def verify(formula):
+    z3 = sp.Popen(["z3", "-in"], stdin=sp.PIPE, stdout=sp.PIPE)
+    fb = formula.encode(ENCODING)
+    out, err = z3.communicate(fb)
+    return decode_pair((out, err))
+
+
+  
   try:
     cmd = f"cabal -v0 run see-hs {args.file.name} {args.n}"
-    res = sp.run(cmd, shell=True, capture_output=True, check=True)
-    out = get_stdout(res)
+    out, err = get_output(sp.run(cmd, shell=True, capture_output=True, check=True))
     program_name, *formulas = out.split("\n\n;SEP\n\n")
 
     if len(formulas) == 0:
@@ -47,10 +55,8 @@ if __name__ == "__main__":
       else:
         models = list()
         for formula in formulas:
-          cmd = "echo \"{}\" | z3 -in"
-          verify = lambda fml: sp.run(cmd.format(fml), shell=True, capture_output=True, check=True)
-          res = verify(formula)
-          out = get_stdout(res)
+
+          out, err = verify(formula)
 
           if "sat" == out: # need to query z3 again for a model
 
@@ -63,7 +69,7 @@ if __name__ == "__main__":
             formula += get_value
             
             # run the same command with a new formula
-            out = get_stdout(verify(formula))
+            out, err = verify(formula)
 
             # parse the model as an S-expression
             model_str = "".join([l.strip() for l in out.split('\n')][1:])
@@ -74,7 +80,7 @@ if __name__ == "__main__":
           elif "unsat" == out:
             pass
           else:
-            raise ValueError("Output is neither sat nor unsat")
+            raise ValueError(f"Output is neither sat nor unsat: {out}")
         
         if len(models) == 0:
           print(VALID_MSG)
@@ -90,8 +96,9 @@ if __name__ == "__main__":
                 res.append(sexp.dumps(v))
             print(program_name.strip(), " ".join(res))
 
-  except sp.CalledProcessError as err:
-    print(ERROR_MSG, get_stderr(err))
-    print(get_stdout(err))
+  except sp.CalledProcessError as e:
+    out, err = get_output(e)
+    print(ERROR_MSG, err)
+    print(out)
     
 
