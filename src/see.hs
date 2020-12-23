@@ -7,9 +7,9 @@ import Parser.Parser ( parseProg )
 
 import Data.List ( intercalate, )
 import Data.Set (Set)
-import qualified Data.Set as S (empty, singleton, difference, union, unions, fromList, map, toList )  
+import qualified Data.Set as S (empty, singleton, difference, union, unions, fromList, map, toList, insert)  
 import Data.Map (Map, (!))
-import qualified Data.Map as Map (insert, fromList, mapAccumWithKey, keys, elems, lookup)
+import qualified Data.Map as Map (insert, fromList, mapAccumWithKey, lookup)
 import Text.Printf ( printf )
 import System.Environment ( getArgs, )
 import Debug.Trace ( trace )
@@ -195,8 +195,8 @@ execute e env@(g,s) =
 
 
 -- Initialize state by mapping input variables to (arbitrary) symbolic values
-initialState :: [Typed] -> State
-initialState ts = Map.fromList (map x_sym ts) where
+initialState :: Set Typed -> State
+initialState ts = Map.fromList (map x_sym (S.toList ts)) where
   x_sym (x,t) = ((x,t), Var (initialValue (x,t))) -- symbolic initial value for variable x
 
 initialValue :: Typed -> Typed
@@ -207,7 +207,7 @@ initialValue (x,t) = ("_" ++ x,t)
 see :: Int -> Program -> (AST, [String])
 see n Program {name=_, param=ps, pre=p, ast=t} = (t', res) where
   t' = unroll t n
-  initState = initialState ps
+  initState = initialState (S.union (S.fromList ps) (collectVarsInAST t))
   (aa, _) = execute t' (map (evalAssertion initState) p, initState)
   res = map (intercalate "\n" . wrap) aa
   wrap a = [xtStr, "", aStr, check, get_value] where
@@ -230,6 +230,13 @@ collectVars (Read ea ei) = S.unions (map collectVars [ea, ei])
 collectVars (Store ea ei ev) = S.unions (map collectVars [ea, ei, ev])
 
 
+-- Collect variables in a BExp
+collectVarsInBExp :: BExp -> Set Typed
+collectVarsInBExp (BCmp (Comp _ e1 e2)) = S.unions (map collectVars [e1,e2])
+collectVarsInBExp (BNot e) = collectVarsInBExp e
+collectVarsInBExp (BBinOp _ e1 e2) = S.unions (map collectVarsInBExp [e1,e2])
+collectVarsInBExp _ = S.empty
+
 -- Collect variables in an Assertion
 collectVarsInAssertion :: Assertion -> Set Typed
 collectVarsInAssertion (ACmp (Comp _ e1 e2)) = S.unions (map collectVars [e1,e2])
@@ -240,6 +247,21 @@ collectVarsInAssertion (AQ _ qVars a) = S.difference s sq where
     s = collectVarsInAssertion a
     sq = S.map (, TInt) (S.fromList qVars)
 collectVarsInAssertion _ = S.empty
+
+
+-- Collect variables in a program AST
+collectVarsInAST :: AST -> Set Typed
+collectVarsInAST Skip = S.empty 
+collectVarsInAST (Assign x e) = S.insert (x,TInt) (collectVars e)
+collectVarsInAST (Write a ei ev) = S.insert (a,TArr) $ S.unions (map collectVars [ei,ev])
+collectVarsInAST (ParAssign x y e1 e2) = S.insert (x,TInt) $ S.insert (y,TInt) rest where
+  rest = S.unions (map collectVars [e1,e2])
+collectVarsInAST (Seq s s') = S.unions (map collectVarsInAST [s,s'])
+collectVarsInAST (If c tb fb) = S.unions (collectVarsInBExp c : map collectVarsInAST [tb,fb])
+collectVarsInAST (While c b) = S.unions [collectVarsInBExp c, collectVarsInAST b]
+collectVarsInAST (Assert a) = collectVarsInAssertion a
+collectVarsInAST (Assume a) = collectVarsInAssertion a
+
 
 
 main :: IO ()
