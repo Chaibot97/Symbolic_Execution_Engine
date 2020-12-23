@@ -208,7 +208,7 @@ see :: Int -> Program -> (AST, [String])
 see n Program {name=_, param=ps, pre=p, ast=t} = (t', res) where
   t' = unroll t n
   initState = initialState ps
-  (aa, _) = execute t' (p, initState)
+  (aa, _) = execute t' (map (evalAssertion initState) p, initState)
   res = map (intercalate "\n" . wrap) aa
   wrap a = [xtStr, "", aStr, check, get_value] where
     psSet = S.fromList ps
