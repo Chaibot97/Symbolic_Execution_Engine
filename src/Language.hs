@@ -83,7 +83,7 @@ instance Show Assertion where
   show (ACmp cmp) = show cmp
   show (ANot b) = "(not " ++ show b ++ ")"
   show (ABinOp op b1 b2) = printf "(%s %s %s)" (show op) (show b1) (show b2)
-  show (AMOp op aa) = printf "(%s %s)" (show op) (unwords (map show aa))
+  show (AMOp op aa) = printf "(%s %s)" (show op) (intercalate "\n  " (map show aa))
   show (AQ q xs s) = printf "(%s (%s) %s)" (show q) xtsStr (show s) where
     xts = zip xs (repeat TInt)
     xtsStr = unwords $ map (\xt -> "(" ++ typedToString xt ++ ")") xts
@@ -101,6 +101,7 @@ data AST =
   | If BExp AST AST
   | While BExp AST
   | Assert Assertion
+  | Assume Assertion
 instance Show AST where
   show s = intercalate "\n" (showStmt s)
 
@@ -128,6 +129,7 @@ showStmt (While c b) =
 showStmt Skip = [ "skip;" ]
 showStmt (Seq b1 b2) = showStmt b1 ++ showStmt b2
 showStmt (Assert assertion) = ["assert " ++ show assertion ++ ";"]
+showStmt (Assume assertion) = ["assume " ++ show assertion ++ ";"]
 
 prefix :: String -> [String] -> [String]
 prefix pre = map (pre ++)

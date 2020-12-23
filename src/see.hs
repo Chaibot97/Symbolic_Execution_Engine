@@ -28,14 +28,17 @@ import Debug.Trace ( trace )
 
 -- Some definitions:
 -- An AExp is an _symbolic expression_ if
---   the only variables it contains are symbolic variables
+--   the only variables it contains are symbolic variables.
+--   Note that the parameters are treated as normal variables,
+--   but the execution machine assigns them with symbolic values
+--   before execution begins
 -- A BExp or an Assertion is _purely symbolic_ if
 --   it only contains _symbolic expressions_
 
 
 -- Remove while loops
 rmWhile :: AST -> AST
-rmWhile (While _ _) = Skip
+rmWhile (While c _) = Assume (ANot (assertBExp c))
 rmWhile (If c tb fb) = If c (rmWhile tb) (rmWhile fb)
 rmWhile (Seq s s') = Seq (rmWhile s) (rmWhile s')
 rmWhile s = s
@@ -45,15 +48,18 @@ rmWhile s = s
 unrollOnce :: AST -> AST
 unrollOnce (If c tb fb) = If c (unrollOnce tb) (unrollOnce fb)
 unrollOnce (Seq b1 b2) = Seq (unrollOnce b1) (unrollOnce b2)
-unrollOnce (While c b) =
-    If c (Seq b' (While c b')) Skip where
-      b' = unrollOnce b
+unrollOnce (While c b) = unrolled where
+  b' = unrollOnce b
+  unrolled = If c (Seq b' (While c b')) Skip
 unrollOnce s = s
 
 
 -- Unroll each while loop n times
 unroll :: AST -> Int -> AST
-unroll s n = if n == 0 then s else unroll (unrollOnce s) (n-1)
+unroll s n = 
+  if n == 0
+  then rmWhile s
+  else unroll (unrollOnce s) (n-1)
 
 
 -- Things we need to keep track of during symbolic execution
@@ -82,14 +88,34 @@ evalAExp s (BinOp op e1 e2) = BinOp op (evalAExp s e1) (evalAExp s e2)
 evalAExp s (Read ea ei) = Read (evalAExp s ea) (evalAExp s ei)
 evalAExp s (Store ea ei ev) = Store (evalAExp s ea) (evalAExp s ei) (evalAExp s ev)
 
+
 -- Interpret a BExp using the symbolic values in the current state
 -- Basically, replace non-symbolic names with symbolic values
 evalBExp :: State -> BExp -> BExp 
 evalBExp _ BTrue = BTrue
-evalBExp _ BFalse  = BFalse
+evalBExp _ BFalse = BFalse
 evalBExp s (BCmp (Comp ord e1 e2)) = BCmp (Comp ord (evalAExp s e1) (evalAExp s e2))
 evalBExp s (BNot e) = BNot (evalBExp s e)
 evalBExp s (BBinOp op e1 e2) = BBinOp op (evalBExp s e1) (evalBExp s e2)
+
+
+evalAssertion :: State -> Assertion -> Assertion
+evalAssertion _ ATrue = ATrue
+evalAssertion _ AFalse = AFalse 
+evalAssertion s (ACmp (Comp ord e1 e2)) = ACmp (Comp ord (evalAExp s e1) (evalAExp s e2))
+evalAssertion s (ANot e) = ANot (evalAssertion s e)
+evalAssertion s (ABinOp op e1 e2) = ABinOp op (evalAssertion s e1) (evalAssertion s e2)
+evalAssertion s (AMOp op aa) = AMOp op (map (evalAssertion s) aa)
+evalAssertion s (AQ q qVars a) = AQ q qVars a' where
+  -- shadow quantified variables with themselves as values in the state
+  -- so that evalAExp/evalBExp won't mistake them for state variables if there's a clash
+  -- e.g. assume that the state maps the program variable i to some symbolic value v, 
+  -- and that the assertion is (forall i ...),
+  -- then the quantified i should evaluate to itself, not v
+  toInt x = (x, TInt)
+  s' = foldl (\sAcc x -> Map.insert (toInt x) (Var (toInt x)) sAcc) s qVars
+  a' = evalAssertion s' a
+
 
 
 -- Convert BExp to Assertion
@@ -159,6 +185,8 @@ execute e env@(g,s) =
       -- return the assertion: neg (path constraint => a), i.e. 
       -- constraint /\ not a. The environment remains unchanged
       ( [conj (ANot a : g ++ assertState s)], [env] )
+    Assume a ->
+      ([], [(evalAssertion s a : g, s)])
     While _ _ ->
       -- ignore while loops as we assume loops have been fully unrolled
       ([], [env])
